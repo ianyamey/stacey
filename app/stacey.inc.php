@@ -596,9 +596,12 @@ Class CategoryListPartial extends Partial {
 		$files = Helpers::list_files($this->dir, '/^\d+?\./', true);
 		foreach($files as $key => $file) {
 			// for each page within this category...
+			$file_path = ''.preg_replace('/^\d+?\./', '', $dir).'/'.preg_replace('/^\d+?\./', '', $file);
+			
 			$vars = array(
-				'/@url/' => $this->page->link_path.preg_replace('/^\d+?\./', '', $dir).'/'.preg_replace('/^\d+?\./', '', $file).'/',
-				'/@thumb/' => $this->check_thumb($this->dir, $file)
+				'/@url/' => $this->page->link_path.$file_path.'/',
+				'/@thumb/' => $this->check_thumb($this->dir, $file),
+				'/@css_class/' => preg_match('/'.preg_replace('/\//', '\/', $file_path).'\/?$/', $_SERVER['REQUEST_URI']) ? 'active' : ''
 			);
 			// create a MockPageInCategory to give us access to all the variables inside this PageInCategory
 			$c = new ContentParser;
@@ -638,6 +641,7 @@ Class NavigationPartial extends Partial {
 				$replacements = array(
 					'/@url/' => $this->page->link_path.$file_name_clean.'/',
 					'/@name/' => ucfirst(preg_replace('/-/', ' ', $file_name_clean)),
+					'/@css_class/' => preg_match('/'.preg_replace('/\//', '\/', $file_name_clean).'/', $_SERVER['REQUEST_URI']) ? 'active' : ''
 				);
 
 				$html .= preg_replace(array_keys($replacements), array_values($replacements), $wrappers[1]);
