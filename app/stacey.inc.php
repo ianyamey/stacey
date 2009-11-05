@@ -256,7 +256,7 @@ Class Page {
 	}
 	function debug() {
 		$html .= '<p>Type: '.$this->get_page_type().'</p>';
-		$html .= '<p>Path: '.$this->get_path_to_folder().'</p>';
+		$html .= '<p>Path: '.$this->get_folder_path().' | '.$this->construct_link_path().'</p>';
 		$html .= '<p>Template: '.$this->template_file.'</p>';
 		$html .= '<p>Name: '.$this->name.' => '.$this->name_unclean.'<p>';
 		$html .= '<p>Category: '.$this->category.' => '.$this->category_unclean.'<p>';
@@ -274,15 +274,7 @@ Class Page {
 		
 		return $html;
 	}
-	function construct_link_path() {
-		$link_path = '';
-		if(!preg_match('/index/', $this->content_file)) {
-			$link_path .= '../';
-			preg_match_all('/\//', $this->content_file, $slashes);
-			for($i = 3; $i < count($slashes[0]); $i++) $link_path .= '../';
-		}
-		return $link_path;
-	}
+
 	
 	function clean_name($name) {
 		// strip leading digit and dot from filename (1.xx becomes xx)
@@ -318,18 +310,22 @@ Class Page {
 		else return false;
 	}
 	
-	function get_path_to_folder() {
-		return $this->get_path_to_parent_folder().'/'.$this->name_unclean;
+	function construct_link_path() {
+		if ($this->page_type == 'index') return '';
+		$depth = sizeof(explode('/',$this->url));
+		return str_repeat("../", $depth);
 	}
 	
-	function get_path_to_parent_folder() {
+	function get_folder_path() {
 		$path = '../content';
-		if (!empty($this->category_unclean)) $path .= '/'.$this->category_unclean;
+		$path .= (!empty($this->category)) ? '/'.$this->category_unclean : '';
+		$path .= '/'.$this->name_unclean;
+		
 		return $path;
 	}
 	
 	function get_page_type() {
-		$txts = Helpers::list_files($this->get_path_to_folder(), '/\.txt$/');
+		$txts = Helpers::list_files($this->get_folder_path(), '/\.txt$/');
 
 		$this->page_type = (!empty($txts)) ? preg_replace('/\.txt/', '', $txts[0]) : '';
 		
@@ -338,10 +334,10 @@ Class Page {
 
 	function get_content_file() {
 		// look for a .txt file
-		$file = $this->get_path_to_folder().'/'.$this->get_page_type().'.txt';
+		$file = $this->get_folder_path().'/'.$this->get_page_type().'.txt';
 
 		if (file_exists($file)) return $file;
-		else return $this->get_path_to_folder().'/none';
+		else return $this->get_folder_path().'/none';
 	}
 	
 	function get_public_file() {
