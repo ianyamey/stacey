@@ -134,29 +134,26 @@ Class Renderer {
 	
 	function __construct($get) {
 		// take the passed url ($get) and turn it into an object
-		$this->page = $this->handle_routes($get);
+		$this->page = $this->handle_routes(key($get));
 	}
 	
-	function handle_routes($get) {
-		// if key is empty, we're looking for the index page
-		if(key($get) == '') {
-			// creating a new page without passing through a name creates the index page
-			return new Page();
-		}
-		// if key does contain slashes, it must be a category/page
-		else if(preg_match('/\//', key($get))) {
-			// explode key, [0] => category, [1] => name
-			$path = explode('/', key($get));
-			// if key contains more than one /, return a 404 as the app doesn't handle more than 2 levels of depth
-			if(count($path) > 2) return key($get);
-			else return new PageInCategory($path[1], $path[0]);
+	function handle_routes($path) {
+		
+		// if path is empty, we're looking for the index page
+		if($path == '') { $path = 'index'; }
+
+		// if key does contain slashes, it must be a page within a category
+		else if(preg_match('/\//', $path)) {
+			return new PageInCategory($path);
 		}
 		// if key contains no slashes, it must be a page or a category
-		else {
-			// check whether we're looking for a category or a page
-			if(Helpers::is_category(key($get))) return new Category(key($get));
-			else return new Page(key($get));
+		else if(Helpers::is_category($path)) {
+			return new Category($path);
 		}
+		
+		return new Page($path);
+		
+		
 	}
 	
 	function render_404() {
@@ -218,22 +215,32 @@ Class Page {
 	var $template_file;
 	var $public_file;
 	
-	var $i;
 	var $unclean_names = array();
 	var $image_files = array();
-	var $sibling_pages;
 	
 	var $link_path;
 	var $content_path;
 	
 	var $default_template = 'content';
 	
-	function __construct($name = 'index', $category = '') {
-		$this->category = $category;
-		$this->category_unclean = $this->unclean_name($this->category,'../content/');
-		$this->content_path = ($category == '') ? '../content/' : '../content/'.$this->category_unclean.'/';
+	var $children;
+	var $parent;
+	var $url_matches;
+	var $page_type;
+	
+	var $url;
+	
+	function __construct($url = 'index') {
 		
-		$this->name = $name;
+		// parse the url /$category/$name
+		preg_match("/^((.*)\/)?([^\/]*$)/", $url, $this->url_matches);
+		$this->url = $url;
+		$this->category = $this->clean_name($this->url_matches[2]);
+		$this->name = $this->clean_name($this->url_matches[3]);
+		
+		$this->category_unclean = $this->unclean_name($this->category,'../content/');
+		$this->content_path = ($this->category == '') ? '../content/' : '../content/'.$this->category_unclean.'/';
+		
 		$this->name_unclean = $this->unclean_name($this->name, $this->content_path);
 		$this->unclean_names = Helpers::list_files($this->content_path, '/.*/', true);
 		
@@ -242,10 +249,31 @@ Class Page {
 		$this->public_file = $this->get_public_file();
 		$this->image_files = $this->get_images();
 		$this->link_path = $this->construct_link_path();
+				
+		$this->parent = $this->category ? $this->category : 'index';
+		$this->children = Helpers::list_files($this->content_path.$this->name_unclean, '/.*/', true);
 		
-		$this->sibling_pages = $this->get_sibling_pages();
 	}
-	
+	function debug() {
+		$html .= '<p>Type: '.$this->get_page_type().'</p>';
+		$html .= '<p>Path: '.$this->get_path_to_folder().'</p>';
+		$html .= '<p>Template: '.$this->template_file.'</p>';
+		$html .= '<p>Name: '.$this->name.' => '.$this->name_unclean.'<p>';
+		$html .= '<p>Category: '.$this->category.' => '.$this->category_unclean.'<p>';
+		$html .= '<p>Parent: <a href="'.$this->link_path.$this->parent.'/'.'">'.$this->parent.'</a><p>';
+		
+		$html .= "<p>URL: ".$this->url."</p>";
+		$i = 0;
+		foreach($this->url_matches as $url) {
+			$html .= '<p><small>'.($i++).' = '.$url.' </small></p> ';
+		}
+		
+		foreach($this->children as $a) {
+			$html .= '<p>C: '.$a.'</p>';
+		}
+		
+		return $html;
+	}
 	function construct_link_path() {
 		$link_path = '';
 		if(!preg_match('/index/', $this->content_file)) {
@@ -262,16 +290,8 @@ Class Page {
 	}
 	
 	function unclean_name($name, $dir) {
-		// loop through each unclean page name looking for a match for $name
-		foreach(Helpers::list_files($dir, '/.*/', true) as $key => $file) {
-			if(preg_match('/'.$name.'$/', $file)) {
-				// store current number of this page
-				$this->i = ($key + 1);
-				// return match
-				return $file;
-			}
-		}
-		return false;
+		$matches = Helpers::list_files($dir, '/^\d+?\.'.$name.'$/', true);
+		return (!empty($name) && !empty($matches)) ? $matches[0] : false;
 	}
 	
 	function get_images() {
@@ -287,25 +307,41 @@ Class Page {
 	function get_template_file($default_template) {
 		// check folder exists, if not, return 404
 		if(!$this->name_unclean) return false;
+		
 		// find the name of the text file
-		preg_match('/\/([^\/]+?)\.txt/', $this->content_file, $template_name);
+		$template_name = $this->get_page_type();
+		
 		// if template exists, return it
-		if(!empty($template_name) && file_exists('../templates/'.$template_name[1].'.html')) return '../templates/'.$template_name[1].'.html';
+		if(file_exists('../templates/'.$template_name.'.html')) return '../templates/'.$template_name.'.html';
 		// return content.html as default template (if it exists)
 		elseif(file_exists('../templates/'.$default_template.'.html')) return '../templates/'.$default_template.'.html';
 		else return false;
 	}
+	
+	function get_path_to_folder() {
+		return $this->get_path_to_parent_folder().'/'.$this->name_unclean;
+	}
+	
+	function get_path_to_parent_folder() {
+		$path = '../content';
+		if (!empty($this->category_unclean)) $path .= '/'.$this->category_unclean;
+		return $path;
+	}
+	
+	function get_page_type() {
+		$txts = Helpers::list_files($this->get_path_to_folder(), '/\.txt$/');
+
+		$this->page_type = (!empty($txts)) ? preg_replace('/\.txt/', '', $txts[0]) : '';
+		
+		return $this->page_type;
+	}
 
 	function get_content_file() {
-		// check folder exists
-		if($this->name_unclean && file_exists($this->content_path.$this->name_unclean)) {
-			// look for a .txt file
-			$txts = Helpers::list_files($this->content_path.$this->name_unclean, '/\.txt$/');
-			// if $txts contains a result, return it
-			if(!empty($txts)) return $this->content_path.$this->name_unclean.'/'.$txts[0];
-		}
-		// return if we didnt find anything
-		return $this->content_path.$this->name_unclean.'/none';
+		// look for a .txt file
+		$file = $this->get_path_to_folder().'/'.$this->get_page_type().'.txt';
+
+		if (file_exists($file)) return $file;
+		else return $this->get_path_to_folder().'/none';
 	}
 	
 	function get_public_file() {
@@ -315,29 +351,30 @@ Class Page {
 	}
 	
 	function get_sibling_pages() {
-		// if current page is a MockPageInCategory, escape this function (to prevent infinite loop)
-		if(get_class($this) == 'MockPageInCategory') return array(array(), array());
-		// loop through each unclean name looking for a match
-		foreach($this->unclean_names as $key => $name) {
-			// if match found...
-			if($name == $this->name_unclean) {
-				// store the names of the next/previous pages
-				$previous_name = ($key >= 1) ? $this->unclean_names[$key-1] : $this->unclean_names[(count($this->unclean_names)-1)];
-				$next_name = ($key + 1 < count($this->unclean_names)) ? $this->unclean_names[$key+1] : $this->unclean_names[0];
-				//store the urls of the next/previous pages
-				$previous = array('/@url/' => '../'.$this->clean_name($previous_name));
-				$next = array('/@url/' => '../'.$this->clean_name($next_name));
-				// create MockPageInCategory objects so we can access the variables of the pages
-				$previous_page = new MockPageInCategory($this->category, $previous_name);
-				$next_page = new MockPageInCategory($this->category, $next_name);
+		// Make sure this page has siblings
+		if (sizeof($this->unclean_names) > 1) {
+			// loop through each unclean name looking for a match
+			foreach($this->unclean_names as $key => $name) {
+				// if match found...
+				if($name == $this->name_unclean) {
+					// store the names of the next/previous pages
+					$previous_name = ($key >= 1) ? $this->unclean_names[$key-1] : $this->unclean_names[(count($this->unclean_names)-1)];
+					$next_name = ($key + 1 < count($this->unclean_names)) ? $this->unclean_names[$key+1] : $this->unclean_names[0];
+					//store the urls of the next/previous pages
+					$previous = array('/@url/' => '../'.$this->clean_name($previous_name));
+					$next = array('/@url/' => '../'.$this->clean_name($next_name));
+					// create MockPageInCategory objects so we can access the variables of the pages
+					$previous_page = new MockPageInCategory($this->category.'/'.$previous_name);
+					$next_page = new MockPageInCategory($this->category.'/'.$next_name);
 				 
-				$c = new ContentParser;
-				return array(
-					array_merge($previous, $c->parse($previous_page)),
-					array_merge($next, $c->parse($next_page)),
-				);
-				// kill loop
-				break;
+					$c = new ContentParser;
+					return array(
+						array_merge($previous, $c->parse($previous_page)),
+						array_merge($next, $c->parse($next_page)),
+					);
+					// kill loop
+					break;
+				}
 			}
 		}
 		
@@ -355,18 +392,10 @@ Class PageInCategory extends Page {
 }
 
 Class MockPageInCategory extends PageInCategory {
-	
-	function __construct($category, $folder_name) {
-		$this->category_unclean = $this->unclean_name($category, '../content/');
-		$this->content_path = '../content/'.$this->category_unclean.'/';
-		
-		$this->name_unclean = $this->unclean_name(preg_replace('/^\d+?\./', '', $folder_name), '../content/'.$this->category_unclean);
-		
-		$this->content_file = $this->get_content_file();
-		$this->image_files = $this->get_images(preg_replace('/\/[^\/]+$/', '', $this->content_file)); 
-		$this->link_path = $this->construct_link_path();
+	function get_sibling_pages() {
+		// escape this function (to prevent infinite loop)
+		return array(array(), array());
 	}
-	
 }
 
 Class ContentParser {
@@ -439,6 +468,8 @@ Class ContentParser {
 		$np = new NextPagePartial;
 		$pp = new PreviousPagePartial;
 		
+		$sibling_pages = $this->page->get_sibling_pages();
+		
 		// push additional useful values to the replacement pairs
 		$replacement_pairs = array(
 			'/@Images_Count/' => count($this->page->image_files),
@@ -446,8 +477,9 @@ Class ContentParser {
 			'/@Page_Number/' => $this->page->i,
 			'/@Year/' => date('Y'),
 			'/@Site_Root\/?/' =>  $this->page->link_path,
-			'/@Previous_Page/' => $pp->render($this->page->sibling_pages[0]),
-			'/@Next_Page/' => $np->render($this->page->sibling_pages[1])
+			'/@Previous_Page/' => $pp->render($sibling_pages[0]),
+			'/@Next_Page/' => $np->render($sibling_pages[1]),
+			'/@Debug/' => $this->page->debug()
 		);
 		// if the page is a Category, push category-specific variables
 		if(get_class($this->page) == 'Category') {
@@ -605,7 +637,7 @@ Class CategoryListPartial extends Partial {
 			);
 			// create a MockPageInCategory to give us access to all the variables inside this PageInCategory
 			$c = new ContentParser;
-			$category_page = new MockPageInCategory($dir, $file);
+			$category_page = new MockPageInCategory($dir.'/'.$file);
 			$vars = array_merge($vars, $c->parse($category_page));
 			$html .= preg_replace(array_keys($vars), array_values($vars), $wrappers[1]);			
 		}
@@ -689,8 +721,6 @@ Class PagesPartial extends Partial {
 		
 		return $html;
 
-		
-		return $html;
 	}
 	
 }
