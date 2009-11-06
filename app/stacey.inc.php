@@ -231,7 +231,7 @@ Class Page {
 	var $parent;
 	var $url_matches;
 	var $page_type;
-	
+	var $sibling_pages; 
 	var $url;
 	
 	function __construct($url = 'index') {
@@ -256,7 +256,8 @@ Class Page {
 		$this->html_files = $this->get_assets('/\.(html|htm)/i');
 		$this->swf_files = $this->get_assets('/\.swf/i');
 		$this->link_path = $this->construct_link_path();
-				
+		
+		$this->sibling_pages = $this->get_sibling_pages();
 		$this->parent = $this->category ? $this->category : 'index';
 		$this->children = Helpers::list_files($this->content_path.$this->name_unclean, '/.*/', true);
 		
@@ -362,7 +363,7 @@ Class Page {
 		if(file_exists('../public/'.$this->name.'.html')) return '../public/'.$this->name.'.html';
 		else return false;
 	}
-	
+
 	function get_sibling_pages() {
 		// Make sure this page has siblings
 		if (sizeof($this->unclean_names) > 1) {
@@ -393,6 +394,7 @@ Class Page {
 		
 		return array(array(), array());
 	}
+
 	
 }
 
@@ -478,9 +480,7 @@ Class ContentParser {
 	}
 	
 	function create_replacement_rules($text) {
-		
-		$sibling_pages = $this->page->get_sibling_pages();
-		
+				
 		// push additional useful values to the replacement pairs
 		$replacement_pairs = array(
 			'/@Images_Count/' => count($this->page->image_files),
@@ -494,7 +494,7 @@ Class ContentParser {
 			'/@Year/' => date('Y'),
 			'/@Site_Root\/?/' =>  $this->page->link_path,
 
-			'/@Debug/' => $this->page->debug()
+			'/@Debug/' => $this->page->debug(),
 			'/@Previous_Page/' => Partial::render($this->page, null, '../templates/partials/previous-page.html', 'PreviousPage'),
 			'/@Next_Page/' => Partial::render($this->page, null, '../templates/partials/next-page.html', 'NextPage')
 		);
@@ -625,6 +625,7 @@ Class Partial {
 		// if a partial is passed through, then we want to process any loops inside it
 		$html .= call_user_func_array($partial_type.'::parse_loop', array($page, '../content/'.$dir, $wrappers[1]));
 		// add closing wrapper
+		
 		$html .= $wrappers[2];
 		return $html;
 		
@@ -632,29 +633,28 @@ Class Partial {
 	
 }
 
-
 Class CategoryList extends Partial {
 	
 	static function parse_loop($page, $dir, $loop_html) {
 		$files = Helpers::list_files($page->get_folder_path(), '/^\d+?\./', true);
-		$path = $page->link_path.preg_replace(array('/\.\.\/content\//', '/^\d+?\./'), '', $dir);
 		$html = '';
+				
 		foreach($files as $key => $file) {
-			// for each page within this category...
-			$url = preg_replace('/^\d+?\./', '', $category_name).'/'.preg_replace('/^\d+?\./', '', $file);
 			
+			// for each page within this category...
+			$url = preg_replace(array('/\.\.\/content\//', '/^\d+?\./'), '', $dir).'/'.preg_replace('/^\d+?\./', '', $file);
 			$c = new ContentParser;
 			$category_page = new MockPageInCategory($url);
-			
+						
 			$vars = array(
-				'/@url/' => $this->page->link_path.$url,
+				'/@url/' => $page->link_path.$url,
 				'/@thumb/' => $category_page->get_thumb(),
 				'/@css_class/' => $category_page->is_current() ? 'active' : '',
 			);
 
 			// create a MockPageInCategory to give us access to all the variables inside this PageInCategory
 			$vars = array_merge($vars, $c->parse($category_page));
-			$html .= preg_replace(array_keys($vars), array_values($vars), $wrappers[1]);
+			$html .= preg_replace(array_keys($vars), array_values($vars), $loop_html);
 		}
 		
 		return $html;
