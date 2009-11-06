@@ -288,12 +288,22 @@ Class Page {
 	
 	function get_images() {
 		// get containing directory by stripping the content file path
-		$dir = preg_replace('/\/[^\/]+$/', '', $this->content_file);
+		$dir = $this->get_folder_path();
 		// store a list of all image files
 		$images = Helpers::list_files($dir, '/\.(gif|jpg|png|jpeg)/i');
 		// remove any thumbnails from the array
 		foreach($images as $key => $image) if(preg_match('/thumb\./i', $image)) unset($images[$key]);
 		return $images;
+	}
+	
+	function get_thumb() {
+		$thumbs = Helpers::list_files($this->get_folder_path(), '/thumb\.(gif|jpg|png|jpeg)/i');
+		return (!empty($thumbs)) ? $this->get_folder_path().'/'.$thumbs[0]  : '';
+	}
+	
+	function is_current() {
+		// Check if the url of this page matches the REQUEST_URI
+		return preg_match('/'.preg_replace('/\//', '\/', $this->url).'\/?$/', $_SERVER['REQUEST_URI']);
 	}
 	
 	function get_template_file($default_template) {
@@ -586,11 +596,7 @@ Class Partial {
 	
 	var $page;
 	var $partial_file;
-	
-	function check_thumb($dir, $file) {
-		$thumbs = Helpers::list_files($dir.'/'.$file, '/thumb\.(gif|jpg|png|jpeg)/i');
-		return (!empty($thumbs)) ? $dir.'/'.$file.'/'.$thumbs[0]  : '';
-	}
+
 
 	function get_partial() {
 		$partial = (file_exists($this->partial_file)) ? file_get_contents($this->partial_file) : '<p>! '.$this->partial_file.' not found.</p>';
@@ -605,15 +611,12 @@ Class Partial {
 }
 
 Class CategoryListPartial extends Partial {
-	
-	var $dir;
 
-	function render($page, $dir, $partial_file) {
+	function render($page, $category_name, $partial_file) {
 		// store reference to current page
 		$this->page = $page;
 		// store correct partial file
 		$this->partial_file = $partial_file;
-		$this->dir = '../content/'.$dir;
 		// pull out html wrappers from partial file
 		$wrappers = $this->get_partial();
 		$html = '';
@@ -621,21 +624,23 @@ Class CategoryListPartial extends Partial {
 		// add opening outer wrapper
 		$html .= $wrappers[0];
 		
-		$files = Helpers::list_files($this->dir, '/^\d+?\./', true);
+		$files = Helpers::list_files($page->get_folder_path(), '/^\d+?\./', true);
 		foreach($files as $key => $file) {
 			// for each page within this category...
-			$file_path = ''.preg_replace('/^\d+?\./', '', $dir).'/'.preg_replace('/^\d+?\./', '', $file);
+			$url = preg_replace('/^\d+?\./', '', $category_name).'/'.preg_replace('/^\d+?\./', '', $file);
+			
+			$c = new ContentParser;
+			$mock_page = new MockPageInCategory($url);
 			
 			$vars = array(
-				'/@url/' => $this->page->link_path.$file_path.'/',
-				'/@thumb/' => $this->check_thumb($this->dir, $file),
-				'/@css_class/' => preg_match('/'.preg_replace('/\//', '\/', $file_path).'\/?$/', $_SERVER['REQUEST_URI']) ? 'active' : ''
+				'/@url/' => $this->page->link_path.$url,
+				'/@thumb/' => $mock_page->get_thumb(),
+				'/@css_class/' => $mock_page->is_current() ? 'active' : '',
 			);
+
 			// create a MockPageInCategory to give us access to all the variables inside this PageInCategory
-			$c = new ContentParser;
-			$category_page = new MockPageInCategory($dir.'/'.$file);
-			$vars = array_merge($vars, $c->parse($category_page));
-			$html .= preg_replace(array_keys($vars), array_values($vars), $wrappers[1]);			
+			$vars = array_merge($vars, $c->parse($mock_page));
+			$html .= preg_replace(array_keys($vars), array_values($vars), $wrappers[1]);
 		}
 		// add closing outer wrapper
 		$html .= $wrappers[2];
@@ -730,9 +735,8 @@ Class ImagesPartial extends Partial {
 		// store reference to current page
 		$this->page = $page;
 		
-		// strip out the name of the content file (ie content.txt) and create the path to the folder
-		$dir = preg_replace('/\/[^\/]+$/', '', $this->page->content_file);
-		$dir = $this->page->link_path.preg_replace('/\.\.\//', '', $dir);
+		// create the path to the folder
+		$dir = $this->page->link_path.preg_replace('/\.\.\//', '', $page->get_folder_path());
 		
 		$html = '';
 		// pull out html wrappers from partial file
