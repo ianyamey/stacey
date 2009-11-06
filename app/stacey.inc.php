@@ -2,7 +2,7 @@
 
 Class Stacey {
 
-	static $version = '1.0';
+	static $version = '1.1';
 	
 	function __construct($get) {
 		$this->php_fixes();
@@ -217,6 +217,10 @@ Class Page {
 	
 	var $unclean_names = array();
 	var $image_files = array();
+
+	var $video_files = array();
+	var $html_files = array();
+	var $swf_files = array();
 	
 	var $link_path;
 	var $content_path;
@@ -247,7 +251,10 @@ Class Page {
 		$this->content_file = $this->get_content_file();
 		$this->template_file = $this->get_template_file($this->default_template);
 		$this->public_file = $this->get_public_file();
-		$this->image_files = $this->get_images();
+		$this->image_files = $this->get_assets('/\.(gif|jpg|png|jpeg)/i');
+		$this->video_files = $this->get_assets('/\.(mov|mp4)/i');
+		$this->html_files = $this->get_assets('/\.(html|htm)/i');
+		$this->swf_files = $this->get_assets('/\.swf/i');
 		$this->link_path = $this->construct_link_path();
 				
 		$this->parent = $this->category ? $this->category : 'index';
@@ -286,14 +293,14 @@ Class Page {
 		return (!empty($name) && !empty($matches)) ? $matches[0] : false;
 	}
 	
-	function get_images() {
+	function get_assets($regex = '/.*/') {
 		// get containing directory by stripping the content file path
 		$dir = $this->get_folder_path();
 		// store a list of all image files
-		$images = Helpers::list_files($dir, '/\.(gif|jpg|png|jpeg)/i');
+		$files = Helpers::list_files($dir, $regex);
 		// remove any thumbnails from the array
-		foreach($images as $key => $image) if(preg_match('/thumb\./i', $image)) unset($images[$key]);
-		return $images;
+		foreach($files as $key => $file) if(preg_match('/thumb\./i', $file)) unset($files[$key]);
+		return $files;
 	}
 	
 	function get_thumb() {
@@ -471,29 +478,32 @@ Class ContentParser {
 	}
 	
 	function create_replacement_rules($text) {
-		$np = new NextPagePartial;
-		$pp = new PreviousPagePartial;
 		
 		$sibling_pages = $this->page->get_sibling_pages();
 		
 		// push additional useful values to the replacement pairs
 		$replacement_pairs = array(
 			'/@Images_Count/' => count($this->page->image_files),
+			'/@Video_Count/' => count($this->page->video_files),
+			'/@Html_Count/' => count($this->page->html_files),
+			'/@Swfs_Count/' => count($this->page->swf_files),
+			'/@Media_Count/' => count($this->page->image_files) + count($this->page->video_files) + count($this->page->html_files) + count($this->page->swf_files),
+			
 			'/@Pages_Count/' => count($this->page->unclean_names),
 			'/@Page_Number/' => $this->page->i,
 			'/@Year/' => date('Y'),
 			'/@Site_Root\/?/' =>  $this->page->link_path,
-			'/@Previous_Page/' => $pp->render($sibling_pages[0]),
-			'/@Next_Page/' => $np->render($sibling_pages[1]),
+
 			'/@Debug/' => $this->page->debug()
+			'/@Previous_Page/' => Partial::render($this->page, null, '../templates/partials/previous-page.html', 'PreviousPage'),
+			'/@Next_Page/' => Partial::render($this->page, null, '../templates/partials/next-page.html', 'NextPage')
 		);
 		// if the page is a Category, push category-specific variables
-		if(get_class($this->page) == 'Category') {
-			$c = new CategoryListPartial;
+		if(get_class($this->page) == 'Category' || get_class($this->page) == 'PageInCategory') {
 			// look for a partial file matching the categories name, otherwise fall back to using the category partial
 			$partial_file = file_exists('../templates/partials/'.$this->page->name.'.html') ? '../templates/partials/'.$this->page->name.'.html' : '../templates/partials/category-list.html';
 			// create a dynamic category list variable
-			$replacement_pairs['/@Category_List/'] = $c->render($this->page, $this->page->name_unclean, $partial_file);
+			$replacement_pairs['/@Category_List/'] = Partial::render($this->page, $this->page->name_unclean, $partial_file, 'CategoryList');
 		}
 		
 		// pull out each key/value pair from the content file
@@ -541,7 +551,7 @@ Class TemplateParser {
 						'name' => $folder,
 						'name_clean' => $folder_clean,
 						// look for a partial file matching the categories name, otherwise fall back to using the category partial
-						'partial_file' => file_exists('../templates/partials/'.$folder_clean.'.html') ? '../templates/partials/'.$file_clean.'.html' : '../templates/partials/category-list.html'
+						'partial_file' => file_exists('../templates/partials/'.$folder_clean.'.html') ? '../templates/partials/'.$folder_clean.'.html' : '../templates/partials/category-list.html'
 					);
 				}
 		}
@@ -549,14 +559,6 @@ Class TemplateParser {
 	}
 	
 	function create_replacement_partials() {
-		// constructs a partial for each category within the content folder
-		$c = new CategoryListPartial;
-		// constructs a partial containing each image on the page
-		$i = new ImagesPartial;
-		// constructs a partial containing all of the top level pages & categories, excluding the index
-		$n = new NavigationPartial;
-		// constructs a partial containing all of the top level pages, excluding any categories and the index
-		$p = new PagesPartial;
 		
 		// construct a special variable which will hold all of the category lists
 		$partials['/@Category_Lists/'] = '';
@@ -565,16 +567,23 @@ Class TemplateParser {
 		// category lists will become available as a variable as: '$.projects-folder' => @Projects_Folder
 		foreach($categories as $category) {
 			// store the output of the CategoryListPartial
-			$category_list = $c->render($this->page, $category['name'], $category['partial_file']);
+			$category_list = Partial::render($this->page, $category['name'], $category['partial_file'], 'CategoryList');
 			// create a partial that matches the name of the category
 			$partials['/@'.ucfirst(preg_replace('/-(.)/e', "'_'.strtoupper('\\1')", $category['name_clean'])).'/'] = $category_list;
 			// append to the @Category_Lists variable
 			$partials['/@Category_Lists/'] .= $category_list;
 		}
 		// construct the rest of the special variables
-		$partials['/@Images/'] = $i->render($this->page);
-		$partials['/@Navigation/'] = $n->render($this->page);
-		$partials['/@Pages/'] = $p->render($this->page);
+		$partials['/@Navigation/'] = Partial::render($this->page, '../content/', '../templates/partials/navigation.html', 'Navigation');
+		$partials['/@Pages/'] = Partial::render($this->page, '../content/', '../templates/partials/pages.html', 'Pages');
+		
+		// construct asset variables
+		$partials['/@Images/'] = Partial::render($this->page, null, '../templates/partials/images.html', 'Images');
+		$partials['/@Video/'] = Partial::render($this->page, null, '../templates/partials/video.html', 'Video');
+		$partials['/@Html/'] = Partial::render($this->page, null, null, 'Html');
+		$partials['/@Swfs/'] = Partial::render($this->page, null, '../templates/partials/swf.html', 'Swf');
+		$partials['/@Media/'] = $partials['/@Images/'].$partials['/@Video/'].$partials['/@Swfs/'].$partials['/@Html/'];
+
 		return $partials;
 	}
 	
@@ -597,178 +606,218 @@ Class Partial {
 	var $page;
 	var $partial_file;
 
-
-	function get_partial() {
-		$partial = (file_exists($this->partial_file)) ? file_get_contents($this->partial_file) : '<p>! '.$this->partial_file.' not found.</p>';
+	static function get_partial($partial_file) {
+		$partial = (file_exists($partial_file)) ? file_get_contents($partial_file) : '<p>! '.$partial_file.' not found.</p>';
 		// split the template file by loop code
 		preg_match('/([\S\s]*)foreach[\S\s]*?:([\S\s]*)endforeach;([\S\s]*)/', $partial, $matches);
 		// if partial file found, return array containing the markup: before loop, inside loop & after loop (in that order)
 		if(!empty($matches)) return array($matches[1], $matches[2], $matches[3]);
 		// if partial file not found, return warning string
-		else return array($partial, '', '');
+		else return array('', $partial, '');
+	}
+	
+	static function render($page, $dir, $partial_file, $partial_type) {
+		// get partial file contents if a partial file was passed through
+		$wrappers = ($partial_file) ? self::get_partial($partial_file) : array('', '', '');
+		$html = '';
+		// add outer wrapper
+		$html .= $wrappers[0];
+		// if a partial is passed through, then we want to process any loops inside it
+		$html .= call_user_func_array($partial_type.'::parse_loop', array($page, '../content/'.$dir, $wrappers[1]));
+		// add closing wrapper
+		$html .= $wrappers[2];
+		return $html;
+		
 	}
 	
 }
 
-Class CategoryListPartial extends Partial {
 
-	function render($page, $category_name, $partial_file) {
-		// store reference to current page
-		$this->page = $page;
-		// store correct partial file
-		$this->partial_file = $partial_file;
-		// pull out html wrappers from partial file
-		$wrappers = $this->get_partial();
-		$html = '';
-		
-		// add opening outer wrapper
-		$html .= $wrappers[0];
-		
+Class CategoryList extends Partial {
+	
+	static function parse_loop($page, $dir, $loop_html) {
 		$files = Helpers::list_files($page->get_folder_path(), '/^\d+?\./', true);
+		$path = $page->link_path.preg_replace(array('/\.\.\/content\//', '/^\d+?\./'), '', $dir);
+		$html = '';
 		foreach($files as $key => $file) {
 			// for each page within this category...
 			$url = preg_replace('/^\d+?\./', '', $category_name).'/'.preg_replace('/^\d+?\./', '', $file);
 			
 			$c = new ContentParser;
-			$mock_page = new MockPageInCategory($url);
+			$category_page = new MockPageInCategory($url);
 			
 			$vars = array(
 				'/@url/' => $this->page->link_path.$url,
-				'/@thumb/' => $mock_page->get_thumb(),
-				'/@css_class/' => $mock_page->is_current() ? 'active' : '',
+				'/@thumb/' => $category_page->get_thumb(),
+				'/@css_class/' => $category_page->is_current() ? 'active' : '',
 			);
 
 			// create a MockPageInCategory to give us access to all the variables inside this PageInCategory
-			$vars = array_merge($vars, $c->parse($mock_page));
+			$vars = array_merge($vars, $c->parse($category_page));
 			$html .= preg_replace(array_keys($vars), array_values($vars), $wrappers[1]);
 		}
-		// add closing outer wrapper
-		$html .= $wrappers[2];
+		
 		return $html;
 	}
 	
 }
 
-Class NavigationPartial extends Partial {
+Class Navigation extends Partial {
 	
-	var $dir = '../content/';
-	var $partial_file = '../templates/partials/navigation.html';
-
-	function render($page) {
-		// store reference to current page
-		$this->page = $page;
+	static function parse_loop($page, $dir, $loop_html) {
+		$files = Helpers::list_files($dir, '/^\d+?\./', true);
+		$path = $page->link_path.preg_replace(array('/\.\.\/content\//', '/^\d+?\./'), '', $dir);
 		$html = '';
-		// pull out html wrappers from partial file
-		$wrappers = $this->get_partial();
-		
-		// add opening outer wrapper
-		$html .= $wrappers[0];
-		
-		// collate navigation set
-		$files = Helpers::list_files($this->dir, '/^\d+?\./', true);
 		foreach($files as $key => $file) {
 			// if file is not the index, add it to the navigation list
 			if (!preg_match('/index/', $file)) {
 				$file_name_clean = preg_replace('/^\d+?\./', '', $file);
 				// store the url and name of the navigation item
 				$replacements = array(
-					'/@url/' => $this->page->link_path.$file_name_clean.'/',
+					'/@url/' => $path.$file_name_clean.'/',
 					'/@name/' => ucfirst(preg_replace('/-/', ' ', $file_name_clean)),
 					'/@css_class/' => preg_match('/'.preg_replace('/\//', '\/', $file_name_clean).'/', $_SERVER['REQUEST_URI']) ? 'active' : ''
 				);
-
-				$html .= preg_replace(array_keys($replacements), array_values($replacements), $wrappers[1]);
+				
+				$html .= preg_replace(array_keys($replacements), array_values($replacements), $loop_html);
 			}
 		}
-		// add closing outer wrapper
-		$html .= $wrappers[2];
 		
 		return $html;
 	}
 	
 }
 
-Class PagesPartial extends Partial {
-	
-	var $dir = '../content';
-	var $partial_file = '../templates/partials/pages.html';
+Class Pages extends Partial {
 
-	function render($page) {
-		// store reference to current page
-		$this->page = $page;
+	static function parse_loop($page, $dir, $loop_html) {
+		$files = Helpers::list_files($dir, '/^\d+?\./', true);
 		$html = '';
-		// pull out html wrappers from partial file
-		$wrappers = $this->get_partial();
-		// add opening outer wrapper
-		$html .= $wrappers[0];
-		
-		// collate navigation set
-		$files = Helpers::list_files($this->dir, '/^\d+?\./', true);
 		foreach($files as $key => $file) {
 			// if file is not a category and is not the index page, add it to the pages list
-			if (!preg_match('/index/', $file) && !Helpers::is_category($file, $this->dir)) {
+			if (!preg_match('/index/', $file) && !Helpers::is_category($file, $dir)) {
 				$file_name_clean = preg_replace('/^\d+?\./', '', $file);
 				// store the url and name of the navigation item
 				$replacements = array(
-					'/@url/' => $this->page->link_path.$file_name_clean.'/',
+					'/@url/' => $page->link_path.$file_name_clean.'/',
 					'/@name/' => ucfirst(preg_replace('/-/', ' ', $file_name_clean)),
 				);
 
-				$html .= preg_replace(array_keys($replacements), array_values($replacements), $wrappers[1]);
+				$html .= preg_replace(array_keys($replacements), array_values($replacements), $loop_html);
 			}
 		}
-		// add closing outer wrapper
-		$html .= $wrappers[2];
 		
 		return $html;
-
 	}
 	
 }
 
-Class ImagesPartial extends Partial {
+Class Images extends Partial {
 
-	var $dir;
-	var $partial_file = '../templates/partials/images.html';
+	static function parse_loop($page, $dir, $loop_html) {
+		$dir = $page->link_path.preg_replace('/\.\.\//', '', $page->get_folder_path());
 
-	function render($page) {
-		// store reference to current page
-		$this->page = $page;
-		
-		// create the path to the folder
-		$dir = $this->page->link_path.preg_replace('/\.\.\//', '', $page->get_folder_path());
-		
 		$html = '';
-		// pull out html wrappers from partial file
-		$wrappers = $this->get_partial();
-		$files = $this->page->image_files;
 		
-		// add opening outer wrapper
-		$html .= $wrappers[0];
-		// loop through inner wrapper, replacing any variables contained within
+		$files = $page->image_files;
 		foreach($files as $key => $file) {
-			$html .= preg_replace('/@url/', $dir.'/'.$file, $wrappers[1]);
+			$html .= preg_replace('/@url/', $dir.'/'.$file, $loop_html);
 		}
-		// add closing outer wrapper
-		$html .= $wrappers[2];
+		
 		return $html;
 	}
 
 }
 
-Class NextPagePartial extends Partial {
-	var $partial_file = '../templates/partials/next-page.html';
+Class Video extends Partial {
 	
-	function render($page_sibling) {
-		$partial = (file_exists($this->partial_file)) ? file_get_contents($this->partial_file) : '';
-		// replace html with @vars
-		$html = (!empty($page_sibling)) ? preg_replace(array_keys($page_sibling), array_values($page_sibling), $partial) : '';
+	static function parse_loop($page, $dir, $loop_html) {
+		$dir = $page->link_path.preg_replace('/\.\.\//', '', $page->get_folder_path());
+
+		$html = '';
+		
+		$files = $page->video_files;
+		foreach($files as $key => $file) {
+			// pull dimensions from file name (if they exist)
+			if(preg_match('/(\d+?)x(\d+?)\./', $file, $matches)) $dimensions = array('width' => $matches[1], 'height' => $matches[2]);
+			else $dimensions = array('width' => '', 'height' => '');
+			$html .= preg_replace(array(
+				'/@url/',
+				'/@width/',
+				'/@height/'
+			), array(
+				$dir.'/'.$file,
+				$dimensions['width'],
+				$dimensions['height']
+			), $loop_html);
+		}
+		
 		return $html;
 	}
+
 }
 
-Class PreviousPagePartial extends NextPagePartial {
-	var $partial_file = '../templates/partials/previous-page.html';
+Class Swf extends Partial {
+
+	static function parse_loop($page, $dir, $loop_html) {
+		$dir = $page->link_path.preg_replace('/\.\.\//', '', $page->get_folder_path());
+
+		$html = '';
+		
+		$files = $page->swf_files;
+		foreach($files as $key => $file) {
+			// pull dimensions from file name (if they exist)
+			if(preg_match('/(\d+?)x(\d+?)\./', $file, $matches)) $dimensions = array('width' => $matches[1], 'height' => $matches[2]);
+			else $dimensions = array('width' => '', 'height' => '');
+			$html .= preg_replace(array(
+				'/@url/',
+				'/@width/',
+				'/@height/'
+			), array(
+				$dir.'/'.$file,
+				$dimensions['width'],
+				$dimensions['height']
+			), $loop_html);
+		}			
+		return $html;
+	}
+
 }
+
+Class Html extends Partial {
+
+	static function parse_loop($page, $dir, $loop_html) {
+		$dir = $page->link_path.preg_replace('/\.\.\//', '', $page->get_folder_path());
+		$html = '';
+		
+		$files = $page->html_files;
+		foreach($files as $key => $file) {
+			if(is_readable($dir.'/'.$file)) $html .= file_get_contents($dir.'/'.$file);
+		}
+		return $html;
+	}
+
+}
+
+Class NextPage extends Partial {
+
+	static function parse_loop($page, $dir, $loop_html) {
+		$page_sibling = $page->sibling_pages[1];
+		$html = (!empty($page_sibling)) ? preg_replace(array_keys($page_sibling), array_values($page_sibling), $loop_html) : '';
+		return $html;
+	}
+
+}
+
+Class PreviousPage extends Partial {
+
+	static function parse_loop($page, $dir, $loop_html) {
+		$page_sibling = $page->sibling_pages[0];
+		$html = (!empty($page_sibling)) ? preg_replace(array_keys($page_sibling), array_values($page_sibling), $loop_html) : '';
+		return $html;
+	}
+
+}
+
 
 ?>
