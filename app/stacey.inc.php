@@ -297,7 +297,7 @@ Class Page {
 	
 	function get_assets($regex = '/.*/') {
 		// get containing directory by stripping the content file path
-		$dir = $this->folder_path;
+		$dir = $this->path;
 		// store a list of all image files
 		$files = Helpers::list_files($dir, $regex);
 		// remove any thumbnails from the array
@@ -337,28 +337,23 @@ Class Page {
 	
 	function get_path() {
 		$path = '../content';
-		
 		// Split the categories and recursively unclean the categories into folder names
 		$categories = explode('/', $this->parent_url);
 		foreach($categories as $c) {
 			$path .= (!empty($c)) ? '/'.$this->unclean_name($c,$path) : '';
 		}
-		
 		$path .= '/'.$this->unclean_name($this->name,$path);
-		
 		return $path;
 	}
 
 	function get_page_type() {
 		$txts = Helpers::list_files($this->path, '/\.txt$/');
-
 		return (!empty($txts)) ? preg_replace('/\.txt/', '', $txts[0]) : false;
 	}
 
 	function get_content_file() {
 		// look for a .txt file
 		$file = $this->path.'/'.$this->get_page_type().'.txt';
-
 		if (file_exists($file)) return $file;
 		else return $this->path.'/none';
 	}
@@ -636,11 +631,10 @@ Class CategoryList extends Partial {
 	static function parse_loop($page, $dir, $loop_html) {
 		$files = Helpers::list_files($dir, '/^\d+?\./', true);
 		$html = '';
-		
-		
+
 		foreach($files as $key => $file) {
-			
 			// for each page within this category...
+			
 			$url = Helpers::path_to_url($dir.'/'.$file);
 			
 			$c = new ContentParser;
@@ -648,7 +642,7 @@ Class CategoryList extends Partial {
 						
 			$vars = array(
 				'/@url/' => $page->link_path.$url,
-				'/@thumb/' => $category_page->get_thumb(),
+				'/@thumb/' => ($category_page->get_thumb()) ? preg_replace('/^\.\.\//','',$page->link_path).$category_page->get_thumb() : '',
 				'/@css_class/' => $category_page->is_current() ? 'active' : '',
 			);
 
