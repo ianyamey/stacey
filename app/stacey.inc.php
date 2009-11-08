@@ -244,7 +244,7 @@ Class Page {
 		$this->content_file = $this->get_content_file();
 		$this->template_file = $this->get_template_file($this->default_template);
 		$this->image_files = $this->get_assets('/\.(gif|jpg|png|jpeg)/i');
-		$this->video_files = $this->get_assets('/\.(mov|mp4)/i');
+		$this->video_files = $this->get_assets('/\.(mov|mp4|m4v)/i');
 		$this->html_files = $this->get_assets('/\.(html|htm)/i');
 		$this->swf_files = $this->get_assets('/\.swf/i');
 						
@@ -603,15 +603,15 @@ Class CategoryList extends Partial {
 			$c = new ContentParser;
 			$category_page = new MockPageInCategory($url);
 						
-			$vars = array(
+			$replacements = array(
 				'/@url/' => $page->link_path.$url,
 				'/@thumb/' => ($category_page->get_thumb()) ? $page->link_path.$category_page->get_thumb() : '',
-				'/@css_class/' => $category_page->is_current() ? 'active' : '',
+				'/@css_class/' => $category_page->is_current() ? 'active' : ''
 			);
 
 			// create a MockPageInCategory to give us access to all the variables inside this PageInCategory
-			$vars = array_merge($vars, $c->parse($category_page));
-			$html .= preg_replace(array_keys($vars), array_values($vars), $loop_html);
+			$replacements = array_merge($replacements, $c->parse($category_page));
+			$html .= preg_replace(array_keys($replacements), array_values($replacements), $loop_html);
 		}
 		
 		return $html;
@@ -677,7 +677,13 @@ Class Images extends Partial {
 		
 		$files = $page->image_files;
 		foreach($files as $key => $file) {
-			$html .= preg_replace('/@url/', $dir.'/'.$file, $loop_html);
+			$name = preg_replace(array('/\.[\w\d]+?$/', '/^\d+?\./'), '', $file);
+			$replacements = array(
+				'/@url/' => $dir.'/'.$file,
+				'/@name/' => ucfirst(preg_replace('/-/', ' ', $name)),
+			);
+			
+			$html .= preg_replace(array_keys($replacements), array_values($replacements), $loop_html);
 		}
 		
 		return $html;
@@ -697,17 +703,15 @@ Class Video extends Partial {
 			// pull dimensions from file name (if they exist)
 			if(preg_match('/(\d+?)x(\d+?)\./', $file, $matches)) $dimensions = array('width' => $matches[1], 'height' => $matches[2]);
 			else $dimensions = array('width' => '', 'height' => '');
-			$html .= preg_replace(array(
-				'/@url/',
-				'/@width/',
-				'/@height/'
-			), array(
-				$dir.'/'.$file,
-				$dimensions['width'],
-				$dimensions['height']
-			), $loop_html);
-		}
 		
+			$replacements = array(
+				'/@url/' => $dir.'/'.$file,
+				'/@width/' => $dimensions['width'],
+				'/@height/' => $dimensions['height']
+			);
+		
+			$html .= preg_replace(array_keys($replacements), array_values($replacements), $loop_html);
+		}
 		return $html;
 	}
 
@@ -725,15 +729,13 @@ Class Swf extends Partial {
 			// pull dimensions from file name (if they exist)
 			if(preg_match('/(\d+?)x(\d+?)\./', $file, $matches)) $dimensions = array('width' => $matches[1], 'height' => $matches[2]);
 			else $dimensions = array('width' => '', 'height' => '');
-			$html .= preg_replace(array(
-				'/@url/',
-				'/@width/',
-				'/@height/'
-			), array(
-				$dir.'/'.$file,
-				$dimensions['width'],
-				$dimensions['height']
-			), $loop_html);
+			$replacements = array(
+				'/@url/' => $dir.'/'.$file,
+				'/@width/' => $dimensions['width'],
+				'/@height/' => $dimensions['height']
+			);
+		
+			$html .= preg_replace(array_keys($replacements), array_values($replacements), $loop_html);
 		}			
 		return $html;
 	}
