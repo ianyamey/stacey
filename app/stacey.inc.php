@@ -8,10 +8,8 @@ Class Stacey {
 		$this->php_fixes();
 		// it's easier to handle some redirection through php rather than relying on a more complex .htaccess file to do all the work
 		if($this->handle_redirects()) return;
-		// parse get request
+		// parse get request and render the page
 		$r = new Renderer($get);
-		// handle rendering of the page
-		$r->render();
 	}
 	
 	function php_fixes() {
@@ -72,15 +70,14 @@ Class Helpers {
 		$path = '../content';
 		// Split the url and recursively unclean the parts into folder names
 		$url_parts = explode('/', $url);
-		foreach($url_parts as $p) {
-			$path .= (!empty($p)) ? '/'.Helpers::unclean_name($p,$path) : '';
+		foreach($url_parts as $u) {
+				// Look for a folder at the current $path
+				$matches = Helpers::list_files($path, '/^\d+?\.'.$u.'$/', true);
+				// No matches means a bad url
+				if (empty($matches)) return false; 
+				else $path .=  '/'.$matches[0];
 		}
 		return $path;
-	}
-	
-	static function unclean_name($name, $dir) {
-		$matches = Helpers::list_files($dir, '/^\d+?\.'.$name.'$/', true);
-		return (!empty($name) && !empty($matches)) ? $matches[0] : false;
 	}
 	
 	static function clean_name($name) {
@@ -146,9 +143,7 @@ Class Cache {
 
 
 Class Renderer {
-	
 	var $page;
-	
 	function __construct($get) {
 		// take the passed url ($get) and turn it into an object
 		$this->page = $this->handle_routes(key($get));
@@ -158,9 +153,16 @@ Class Renderer {
 		// if path is empty, we're looking for the index page
 		if($url == '') { $url = 'index'; }
 		
-		if (Helpers::is_category(Helpers::url_to_path($url))) return new Category($url);
-		else if (preg_match('/\//', $url)) return new PageInCategory($url);
-		else return new Page($url);
+		if (Helpers::is_category(Helpers::url_to_path($url))) 
+			$this->page = new Category($url);
+		else if (preg_match('/\//', $url)) 
+			$this->page = new PageInCategory($url);
+		else 
+			$this->page = new Page($url);
+		
+		// render a 404 if we cannot find a folder path matching the given url
+		if (!file_exists($this->page->content_file)) $this->render_404();
+		else { $this->render(); }
 	}
 	
 	function render_404() {
@@ -174,8 +176,6 @@ Class Renderer {
 	}
 	
 	function render() {
-		// if page doesn't contain a content file or have a matching template file, redirect to it or return 404
-		if(!$this->page || !$this->page->page_type) return $this->render_404();
 		// create new cache object
 		$cache = new Cache($this->page);
 		// check etags
@@ -324,9 +324,7 @@ Class Page {
 
 	function get_content_file() {
 		// look for a .txt file
-		$file = $this->path.'/'.$this->get_page_type().'.txt';
-		if (file_exists($file)) return $file;
-		else return $this->path.'/none';
+		return $this->path.'/'.$this->get_page_type().'.txt';
 	}
 
 	function get_sibling_pages() {
