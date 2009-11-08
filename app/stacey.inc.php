@@ -63,7 +63,7 @@ Class Helpers {
 	}
 	
 	static function path_to_url($path) {
-		return preg_replace(array('/\d+?\./', '/..\/content\//'), '', $path);
+		return preg_replace(array('/\d+?\./', '/\.\.\/content\//'), '', $path);
 	}
 	
 	static function url_to_path($url) {
@@ -232,10 +232,10 @@ Class Page {
 	function __construct($url = 'index') {
 		
 		// parse the url /$parent_url/$name
-		preg_match("/^((.*)\/)?([^\/]*$)/", $url, $url_matches);
+		preg_match("/^(.*\/)?([^\/]*)$/", $url, $url_matches);
 		$this->url = $url;
-		$this->parent_url = $url_matches[2];
-		$this->name = $url_matches[3];
+		$this->parent_url = $url_matches[1];
+		$this->name = $url_matches[2];
 		
 		$this->path = $this->get_path();
 		$this->link_path = $this->construct_link_path();
@@ -319,7 +319,7 @@ Class Page {
 
 	function get_page_type() {
 		$txts = Helpers::list_files($this->path, '/\.txt$/');
-		return (!empty($txts)) ? preg_replace('/\.txt/', '', $txts[0]) : false;
+		return (!empty($txts)) ? preg_replace('/\.txt$/', '', $txts[0]) : false;
 	}
 
 	function get_content_file() {
@@ -598,7 +598,6 @@ Class CategoryList extends Partial {
 
 		foreach($files as $key => $file) {
 			// for each page within this category...
-			
 			$url = Helpers::path_to_url($dir.'/'.$file);
 			
 			$c = new ContentParser;
@@ -624,17 +623,16 @@ Class Navigation extends Partial {
 	
 	static function parse_loop($page, $dir, $loop_html) {
 		$files = Helpers::list_files($dir, '/^\d+?\./', true);
-		$path = $page->link_path.preg_replace(array('/\.\.\/content\//', '/^\d+?\./'), '', $dir);
 		$html = '';
 		foreach($files as $key => $file) {
 			// if file is not the index, add it to the navigation list
 			if (!preg_match('/index/', $file)) {
-				$file_name_clean = preg_replace('/^\d+?\./', '', $file);
+				$url = Helpers::path_to_url($dir.$file);
 				// store the url and name of the navigation item
 				$replacements = array(
-					'/@url/' => $path.$file_name_clean.'/',
-					'/@name/' => ucfirst(preg_replace('/-/', ' ', $file_name_clean)),
-					'/@css_class/' => preg_match('/'.preg_replace('/\//', '\/', $file_name_clean).'/', $_SERVER['REQUEST_URI']) ? 'active' : ''
+					'/@url/' => $page->link_path.$url,
+					'/@name/' => ucfirst(preg_replace('/-/', ' ', preg_replace('/^\d+?\./', '', $file))),
+					'/@css_class/' => preg_match('/'.preg_replace('/\//', '\/', $url).'/', $_SERVER['REQUEST_URI']) ? 'active' : ''
 				);
 				
 				$html .= preg_replace(array_keys($replacements), array_values($replacements), $loop_html);
