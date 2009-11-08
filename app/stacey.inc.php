@@ -308,7 +308,7 @@ Class Page {
 	}
 	
 	function construct_link_path() {
-		if ($this->get_page_type() == 'index') return '';
+		if ($this->url == 'index') return '';
 		$depth = sizeof(explode('/',$this->url));
 		return str_repeat("../", $depth);
 	}
@@ -456,7 +456,7 @@ Class ContentParser {
 			'/@Next_Page/' => Partial::render($this->page, null, '../templates/partials/next-page.html', null, 'NextPage')
 		);
 		// if the page is a Category, push category-specific variables
-		if(get_class($this->page) == 'Category' || get_class($this->page) == 'PageInCategory') {
+		if(get_class($this->page) == 'Category') {
 			// look for a partial file matching the categories name, otherwise fall back to using the category partial
 			$partial_file = file_exists('../templates/partials/'.$this->page->name.'.html') ? '../templates/partials/'.$this->page->name.'.html' : '../templates/partials/category-list.html';
 			// create a dynamic category list variable
