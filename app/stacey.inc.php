@@ -226,7 +226,6 @@ Class Page {
 	var $siblings;
 	var $position;
 	var $page_type;
-	var $sibling_pages; 
 	var $url;
 	
 	function __construct($url = 'index') {
@@ -248,7 +247,7 @@ Class Page {
 		$this->html_files = $this->get_assets('/\.(html|htm)/i');
 		$this->swf_files = $this->get_assets('/\.swf/i');
 						
-		$this->siblings = Helpers::list_files($this->path.'/../', '/.*/', true);
+		$this->siblings = $this->get_siblings();
 		
 		// Save the position of the page within its siblings 
 		foreach($this->siblings as $key => $file) {
@@ -258,9 +257,7 @@ Class Page {
 			}
 		}
 		
-		$this->children = Helpers::list_files($this->path, '/.*/', true);
-		$this->sibling_pages = $this->get_sibling_pages();
-		
+		$this->children = Helpers::list_files($this->path, '/.*/', true);		
 	}
 	function debug() {
 		$html .= '<p>Type: '.$this->get_page_type().'</p>';
@@ -327,31 +324,10 @@ Class Page {
 		return $this->path.'/'.$this->get_page_type().'.txt';
 	}
 
-	function get_sibling_pages() {
-		$total = count($this->siblings);
-		$i = $this->position;
-				
-		// Don't display links if there are no other pages
-		if ($total <= 1) return;
-
-		// store the names of the next/previous pages
-		$prev_name = Helpers::clean_name($this->siblings[ ($i == 0) ? $total-1 : $i-1 ]);
-		$next_name = Helpers::clean_name($this->siblings[ ($i+1) % $total] );
-		
-		//store the urls of the next/previous pages
-		$prev = array('/@url/' => '../'.$prev_name);
-		$next = array('/@url/' => '../'.$next_name);
-		
-		// create MockPageInCategory objects so we can access the variables of the pages
-		$prev_page = new MockPageInCategory($this->parent_url.'/'.$prev_name);
-		$next_page = new MockPageInCategory($this->parent_url.'/'.$next_name);
-				 
-		$c = new ContentParser;
-		return array(
-			array_merge($prev, $c->parse($prev_page)),
-			array_merge($next, $c->parse($next_page)),
-		);	
-	}	
+	function get_siblings() {
+		return Helpers::list_files($this->path.'/../', '/.*/', true);
+	}
+	
 }
 
 Class Category extends Page {
@@ -363,9 +339,9 @@ Class PageInCategory extends Page {
 }
 
 Class MockPageInCategory extends PageInCategory {
-	function get_sibling_pages() {
+	function get_siblings() {
 		// escape this function (to prevent infinite loop)
-		return array(array(), array());
+		return array();
 	}
 }
 
@@ -757,21 +733,40 @@ Class Html extends Partial {
 }
 
 Class NextPage extends Partial {
+	
+	static function get_sibling_replacements($page, $offset) {
+		$total = count($page->siblings);
+		$i = $page->position + $offset;
 
+		if ($total <=1 ) return array();
+		
+		// get the sibling, using circular array indices
+		$sibling_position = ($i < 0) ? $total + ($i % $total) : $i % $total;
+		$sibling_name = Helpers::clean_name($page->siblings[ $sibling_position ]);
+		
+		//store the urls of the next/previous pages
+		$replacements = array('/@url/' => '../'.$sibling_name);
+		
+		// create MockPageInCategory objects so we can access the variables of the pages
+		$mock_page = new MockPageInCategory($page->parent_url.$sibling_name);
+		$c = new ContentParser;
+		$replacements = array_merge($replacements, $c->parse($mock_page));
+		
+		return $replacements;
+	}
+	
 	static function parse_loop($page, $dir, $loop_html) {
-		$page_sibling = $page->sibling_pages[1];
-		$html = (!empty($page_sibling)) ? preg_replace(array_keys($page_sibling), array_values($page_sibling), $loop_html) : '';
-		return $html;
+		$replacements = NextPage::get_sibling_replacements($page, 1);
+		return (!empty($replacements)) ? preg_replace(array_keys($replacements), array_values($replacements), $loop_html) : '';
 	}
 
 }
 
 Class PreviousPage extends Partial {
-
+	
 	static function parse_loop($page, $dir, $loop_html) {
-		$page_sibling = $page->sibling_pages[0];
-		$html = (!empty($page_sibling)) ? preg_replace(array_keys($page_sibling), array_values($page_sibling), $loop_html) : '';
-		return $html;
+		$replacements = NextPage::get_sibling_replacements($page, -1);
+		return (!empty($replacements)) ? preg_replace(array_keys($replacements), array_values($replacements), $loop_html) : '';
 	}
 
 }
