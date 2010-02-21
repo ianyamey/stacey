@@ -17,6 +17,20 @@
 			<hr>
 			:navigation
 			<div id="content" class="col eight">
+				<div id="random-project">
+					get "/projects" do
+						random $children do
+							<p>Random project: <a href="@url">@title</a></p>
+						endrandom
+					end
+				</div>
+				
+				<div id="random-image">
+					random $images do
+						<p>Random homepage image: <img src="@url" alt="@name/"></p>
+					endrandom
+				</div>
+				
 			  :category-lists
 			</div>
 			<hr>

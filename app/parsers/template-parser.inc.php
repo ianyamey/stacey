@@ -58,6 +58,10 @@ Class TemplateParser {
 		  $template = self::parse_foreach($data, $template);
 		}
 		
+		if(preg_match('/random[\s]+?([\$\@].+?)\s+?do\s+?([\S\s]+)endrandom/', $template)) {
+		  $template = self::parse_random($data, $template);
+		}		
+		
 		if(preg_match('/if\s*?(!)?\s*?([\$\@].+?)\s+?do\s+?([\S\s]+?)endif/', $template)) {
 		  $template = self::parse_if($data, $template);
 		}
@@ -128,6 +132,33 @@ Class TemplateParser {
 				# recursively parse the inside part of the foreach loop
 				$template .= self::parse($data_object, $template_parts[3]);
 			}
+		}
+		
+		# run the replacements on the post-"foreach" part of the partial
+		$template .= self::parse($data, $template_parts[4]);
+		return $template;
+	}
+	
+	static function parse_random($data, $template) {
+		# split out the partial into the parts Before, Inside, and After the foreach loop
+		preg_match('/([\S\s]*?)random[\s]+?([\$\@].+?)\s+?do\s+?([\S\s]+?)endrandom([\S\s]*)$/', $template, $template_parts);
+		# run the replacements on the pre-"foreach" part of the partial
+		$template = self::parse($data, $template_parts[1]);
+		
+		# traverse one level deeper into the data hierachy
+		$pages = (isset($data[$template_parts[2]]) && is_array($data[$template_parts[2]]) && !empty($data[$template_parts[2]])) ? $data[$template_parts[2]] : false;
+		
+		# check for any nested matches
+	  $template_parts = self::test_nested_matches($template_parts, 'random[\s]+?[\$\@].+?\s+?do\s+?', 'endrandom');
+		
+		if($pages) {
+			# choose a random item
+			$data_item = $pages[array_rand($pages)];
+			# transform data_item into its appropriate Object
+			$data_object =& AssetFactory::get($data_item);
+			# recursively parse the inside part of the foreach loop
+			$template .= self::parse($data_object, $template_parts[3]);
+
 		}
 		
 		# run the replacements on the post-"foreach" part of the partial
